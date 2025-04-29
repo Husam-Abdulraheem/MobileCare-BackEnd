@@ -1,0 +1,6 @@
+@MobileCare_HostAddress = http://localhost:5152
+
+GET {{MobileCare_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
