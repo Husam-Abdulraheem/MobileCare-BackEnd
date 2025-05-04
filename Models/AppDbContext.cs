@@ -52,7 +52,6 @@ public partial class AppDbContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("IMEI");
             entity.Property(e => e.Model).HasMaxLength(100);
-            entity.Property(e => e.ProblemDescription).HasColumnType("text");
         });
 
         modelBuilder.Entity<Repairorder>(entity =>
@@ -71,7 +70,7 @@ public partial class AppDbContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp");
             entity.Property(e => e.EstimatedCost).HasPrecision(10);
-            entity.Property(e => e.Notes).HasColumnType("text");
+            entity.Property(e => e.ProblemDescription).HasColumnType("text");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Pending'")
                 .HasColumnType("enum('Pending','InProgress','Ready','Collected')");

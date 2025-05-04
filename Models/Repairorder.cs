@@ -17,7 +17,7 @@ public partial class Repairorder
 
     public string? Status { get; set; }
 
-    public string? Notes { get; set; }
+    public string? ProblemDescription { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 

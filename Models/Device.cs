@@ -13,8 +13,6 @@ public partial class Device
 
     public string? Imei { get; set; }
 
-    public string? ProblemDescription { get; set; }
-
     public string? DeviceCondition { get; set; }
 
     public virtual ICollection<Repairorder> Repairorders { get; set; } = new List<Repairorder>();

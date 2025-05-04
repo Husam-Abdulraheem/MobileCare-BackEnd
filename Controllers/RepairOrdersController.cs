@@ -1,9 +1,11 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Humanizer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileCare.DTOs;
 using MobileCare.Models;
 using MySql.Data.MySqlClient;
+using System.Data;
 
 namespace MobileCare.Controllers
 {
@@ -19,13 +21,13 @@ namespace MobileCare.Controllers
             _db = db;
         }
 
-        [HttpPost("create-via-stored-procedure")]
+        [HttpPost("create-order")]
         public async Task<IActionResult> CreateViaStoredProcedure([FromBody] CreateRepairOrderDto dto)
         {
             try
             {
                 var sql = @"CALL CreateRepairRequest(@p_CustomerName, @p_PhoneNumber, @p_Brand, 
-                        @p_Model, @p_IMEI, @p_ProblemDescription, @p_DeviceCondition, @p_EstimatedCost, @p_UserId, @p_Notes);";
+                        @p_Model, @p_IMEI, @p_ProblemDescription, @p_DeviceCondition, @p_EstimatedCost, @p_UserId);";
 
                 var parameters = new[]
                 {
@@ -38,7 +40,6 @@ namespace MobileCare.Controllers
                 new MySqlParameter("@p_DeviceCondition", dto.DeviceCondition),
                 new MySqlParameter("@p_EstimatedCost", dto.EstimatedCost),
                 new MySqlParameter("@p_UserId", dto.UserId),
-                new MySqlParameter("@p_Notes", dto.Notes),
             };
 
                 await _db.Database.ExecuteSqlRawAsync(sql, parameters);
@@ -53,69 +54,208 @@ namespace MobileCare.Controllers
 
 
 
-        [HttpGet("Get-all-orders")]
-        public async Task<IActionResult> GetAll()
+        [HttpGet("get-orders-by-user")]
+        public async Task<IActionResult> GetOrdersByUser(int userId)
         {
-            var orders = await _db.Repairorders
-                .Include(r => r.Customer)
-                .Include(r => r.Device)
-                .Include(r => r.User)
-                .ToListAsync();
+            var orders = new List<RepairOrderDto>();
 
-            if (orders.Count == 0)
-                return Ok("There is no Orders");
+            using var connection = _db.Database.GetDbConnection();
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = "CALL GetAllOrdersByUser(@param_UserId)";
+            command.CommandType = CommandType.Text;
+
+            var param = command.CreateParameter();
+            param.ParameterName = "@param_UserId";
+            param.Value = userId;
+            command.Parameters.Add(param);
+
+            using var reader = await command.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                orders.Add(new RepairOrderDto
+                {
+                    RepairOrderId = reader.GetInt32(0),
+                    CustomerFullName = reader.GetString(1),
+                    PhoneNumber = reader.GetString(2),
+                    Brand = reader.GetString(3),
+                    Model = reader.GetString(4),
+                    IMEI = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    ProblemDescription = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    DeviceCondition = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    UserFullName = reader.GetString(8),
+                    CreatedAt = reader.GetDateTime(9),
+                    UpdatedAt = reader.GetDateTime(10),
+                    Status = reader.GetString(11),
+                    EstimatedCost = reader.IsDBNull(12) ? 0 : reader.GetDecimal(12),
+                });
+            }
 
             return Ok(orders);
         }
 
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetById(int id)
+
+
+
+
+        [HttpPut("update-order/{id}")]
+        public async Task<IActionResult> UpdateOrder(int id, [FromBody] UpdateRepairOrderDto dto)
         {
-            var order = await _db.Repairorders
-                .Include(r => r.Customer)
-                .Include(r => r.Device)
-                .Include(r => r.User)
-                .FirstOrDefaultAsync(r => r.RepairOrderId == id);
+            using var connection = _db.Database.GetDbConnection();
+            await connection.OpenAsync();
 
-            if (order == null)
-                return NotFound("Order not found");
+            using var command = connection.CreateCommand();
+            command.CommandText = "CALL UpdateRepairOrderById(@p_RepairOrderId, @p_CustomerFullName, @p_PhoneNumber, @p_Brand, @p_Model, @p_IMEI, @p_ProblemDescription, @p_DeviceCondition, @p_EstimatedCost, @p_Status)";
 
-            return Ok(order);
-        }
+            command.Parameters.Add(new MySqlParameter("@p_RepairOrderId", id));
+            command.Parameters.Add(new MySqlParameter("@p_CustomerFullName", (object?)dto.CustomerFullName ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_PhoneNumber", (object?)dto.PhoneNumber ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_Brand", (object?)dto.Brand ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_Model", (object?)dto.Model ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_IMEI", (object?)dto.IMEI ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_ProblemDescription", (object?)dto.ProblemDescription ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_DeviceCondition", (object?)dto.DeviceCondition ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_EstimatedCost", (object?)dto.EstimatedCost ?? DBNull.Value));
+            command.Parameters.Add(new MySqlParameter("@p_Status", (object?)dto.Status ?? DBNull.Value));
 
-
-
-
-        [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, [FromBody] UpdateRepairOrderDto dto)
-        {
-            var order = await _db.Repairorders.FindAsync(id);
-            if (order == null)
-                return NotFound("Order not found");
-
-            order.Status = dto.Status ?? order.Status;
-            order.Notes = dto.Notes ?? order.Notes;
-            order.EstimatedCost = dto.EstimatedCost ?? order.EstimatedCost;
-            order.UpdatedAt = DateTime.UtcNow;
-
-            await _db.SaveChangesAsync();
+            await command.ExecuteNonQueryAsync();
             return Ok("Order updated successfully");
         }
 
 
 
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> Delete(int id)
+
+        [HttpPut("update-status")]
+        public async Task<IActionResult> UpdateStatus(int repairOrderId, string status)
         {
-            var order = await _db.Repairorders.FindAsync(id);
-            if (order == null)
-                return NotFound("Order not found");
+            try
+            {
+                var allowedStatuses = new[] { "Pending", "InProgress", "Ready", "Collected" };
+                if (!allowedStatuses.Contains(status))
+                {
+                    return BadRequest(new { error = "Invalid status value." });
+                }
 
-            _db.Repairorders.Remove(order);
-            await _db.SaveChangesAsync();
+                using var connection = _db.Database.GetDbConnection();
+                await connection.OpenAsync();
 
-            return Ok("Deleted");
+                using var command = connection.CreateCommand();
+                command.CommandText = "CALL UpdateRepairOrderStatus(@p_RepairOrderId, @p_Status)";
+                command.CommandType = CommandType.Text;
+
+                var paramId = command.CreateParameter();
+                paramId.ParameterName = "@p_RepairOrderId";
+                paramId.Value = repairOrderId;
+                command.Parameters.Add(paramId);
+
+                var paramStatus = command.CreateParameter();
+                paramStatus.ParameterName = "@p_Status";
+                paramStatus.Value = status;
+                command.Parameters.Add(paramStatus);
+
+                await command.ExecuteNonQueryAsync();
+
+                return Ok(new { message = "Status updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
         }
+
+
+
+
+
+        [HttpDelete("delete-order/{id}")]
+        public async Task<IActionResult> DeleteRepairOrder(int id)
+        {
+            try
+            {
+                var sql = "CALL DeleteRepairOrderById(@p_RepairOrderId);";
+                var parameters = new[] {
+            new MySqlParameter("@p_RepairOrderId", id)
+        };
+
+                await _db.Database.ExecuteSqlRawAsync(sql, parameters);
+
+                return Ok(new { message = "Repair order deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
+
+        [HttpGet("user-stats/{userId}")]
+        public async Task<IActionResult> GetUserRepairStats(int userId)
+        {
+            try
+            {
+                var connection = _db.Database.GetDbConnection();
+                await connection.OpenAsync();
+
+                using var command = connection.CreateCommand();
+                command.CommandText = @"
+            SELECT 
+                CountRepairOrders(@userId) AS OrderCount,
+                AverageRepairCost(@userId) AS AvgCost;
+        ";
+                command.CommandType = CommandType.Text;
+
+                command.Parameters.Add(new MySqlParameter("@userId", userId));
+
+                using var reader = await command.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
+                {
+                    var result = new
+                    {
+                        UserId = userId,
+                        OrderCount = reader["OrderCount"] != DBNull.Value ? Convert.ToInt32(reader["OrderCount"]) : 0,
+                        AvgCost = reader["AvgCost"] != DBNull.Value ? Convert.ToDecimal(reader["AvgCost"]) : 0
+                    };
+
+                    return Ok(result);
+                }
+
+                return NotFound("No data found for the given user.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+
+
+
+        [HttpGet("user-revenue/{userId}")]
+        public async Task<IActionResult> GetTotalRevenueByUser(int userId)
+        {
+            try
+            {
+                var conn = _db.Database.GetDbConnection();
+                await conn.OpenAsync();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT GetTotalRevenueByUser(@userId);";
+                cmd.Parameters.Add(new MySqlParameter("@userId", userId));
+
+                var result = await cmd.ExecuteScalarAsync();
+                var revenue = Convert.ToDecimal(result);
+
+                return Ok(new { userId = userId, totalRevenue = revenue });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
 
 
 

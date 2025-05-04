@@ -10,9 +10,7 @@
         public string ProblemDescription { get; set; } = string.Empty;
         public string DeviceCondition { get; set; } = string.Empty;
         public decimal EstimatedCost { get; set; }
-
         public int UserId { get; set; }
-        public string Notes { get; set; }
 
     }
 }
