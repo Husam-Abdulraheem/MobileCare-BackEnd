@@ -261,6 +261,53 @@ namespace MobileCare.Controllers
 
 
 
+        [HttpGet("user-order-count-by-status/{userId}")]
+        public async Task<IActionResult> GetOrderCountByStatus(int userId)
+        {
+            try
+            {
+                var result = new List<object>();
+
+                using (var connection = _db.Database.GetDbConnection())
+                {
+                    await connection.OpenAsync();
+
+                    using (var command = connection.CreateCommand())
+                    {
+                        command.CommandText = "CALL GetUserOrderCountByStatus(@p_UserId);";
+                        command.CommandType = CommandType.Text;
+
+                        var userIdParam = command.CreateParameter();
+                        userIdParam.ParameterName = "@p_UserId";
+                        userIdParam.Value = userId;
+                        command.Parameters.Add(userIdParam);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            while (await reader.ReadAsync())
+                            {
+                                result.Add(new
+                                {
+                                    Status = reader["Status"].ToString(),
+                                    TotalOrders = Convert.ToInt32(reader["TotalOrders"])
+                                });
+                            }
+                        }
+                    }
+                }
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+
+
+
+
 
     }
 }
